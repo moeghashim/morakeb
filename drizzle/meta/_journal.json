@@ -1,0 +1,41 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1761159590826,
+      "tag": "0000_boring_kang",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1761170723359,
+      "tag": "0001_funny_titania",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1761206628617,
+      "tag": "0002_workable_purifiers",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1761287937234,
+      "tag": "0003_big_azazel",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1761901707927,
+      "tag": "0004_dear_jubilee",
+      "breakpoints": true
+    }
+  ]
+}

@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      run_e2e:
+        description: "Run live e2e tests"
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      ENCRYPTION_KEY: TEST_ENCRYPTION_KEY_0123456789abcdef0123456789abcdef
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup Bun
+      uses: oven-sh/setup-bun@v1
+      with:
+        bun-version: latest
+    
+    - name: Install dependencies
+      run: bun install
+    
+    - name: Prepare tmp dir for tests
+      run: mkdir -p tmp
+
+    - name: Type check
+      run: bun typecheck
+    
+    - name: Run unit/integration tests
+      run: bun test
+
+    - name: Run live e2e tests (optional)
+      if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_e2e == true }}
+      run: LIVE=1 bun test tests/e2e
+
+    - name: Build
+      run: bun run build
