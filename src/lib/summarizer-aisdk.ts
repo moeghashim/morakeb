@@ -109,20 +109,25 @@ export class AISDKSummarizer implements Summarizer {
           setTimeout(() => reject(new Error('Timeout after 2 minutes')), 120000);
         });
 
-        const generatePromise = this.generator({
+        // Build generator options - use type assertion to avoid TypeScript deep instantiation error
+        const baseOptions = {
           model: getModel(model),
           prompt,
           schema,
-          ...(provider === 'google'
-            ? {
-                providerOptions: {
-                  google: {
-                    structuredOutputs: false,
-                  },
+        };
+        
+        const generatorOptions = provider === 'google'
+          ? {
+              ...baseOptions,
+              providerOptions: {
+                google: {
+                  structuredOutputs: false,
                 },
-              }
-            : {}),
-        });
+              },
+            } as Parameters<typeof this.generator>[0]
+          : baseOptions as Parameters<typeof this.generator>[0];
+
+        const generatePromise = this.generator(generatorOptions);
 
         const { object } = await Promise.race([generatePromise, timeoutPromise]);
 
