@@ -4,9 +4,16 @@ import type { DB } from '@/db';
 import type { Scheduler } from '../scheduler';
 import type { JobsQueue } from '@/jobs/queue';
 import { z } from 'zod';
-import { notificationChannelPlugins } from '@/lib/channel';
+import { notificationChannelPlugins, type ChannelWithConfig } from '@/lib/channel';
 import { encryption } from '@/lib/encryption';
-import { TelegramConfigSchema } from '@/lib/notification/telegram';
+import { TelegramConfigSchema, type TelegramConfig } from '@/lib/notification/telegram';
+import { Fetcher } from '@/lib/fetcher';
+import { MarkdownConverter } from '@/lib/markdown';
+import { SummaryService } from '@/lib/summary-service';
+import { NotificationService } from '@/lib/notifier';
+import { DroidSummarizer } from '@/lib/summarizer-droid';
+import { AISDKSummarizer } from '@/lib/summarizer-aisdk';
+import type { Monitor, Change } from '@/db';
 
 // SSRF protection: block private/internal IPs and localhost
 function isPrivateIP(hostname: string): boolean {
@@ -94,6 +101,11 @@ const updateChannelSchema = z.object({
   name: z.string().min(1).max(255).optional(),
   config: z.unknown().optional(),
   active: z.boolean().optional(),
+});
+
+const summarizeOnceSchema = z.object({
+  url: httpUrlSchema,
+  channelId: z.number().int().positive().optional(),
 });
 
 export function createApiServer(db: DB, scheduler: Scheduler, queue: JobsQueue) {
@@ -366,7 +378,7 @@ export function createApiServer(db: DB, scheduler: Scheduler, queue: JobsQueue) 
   app.post('/api/channels', async (c) => {
     try {
       const body = await c.req.json();
-      const data = createChannelSchema.parse(body);
+      const data = createChannelSchema.parse(body) as Parameters<typeof db.createNotificationChannel>[0];
 
       const channel = db.createNotificationChannel(data);
 
@@ -495,6 +507,252 @@ export function createApiServer(db: DB, scheduler: Scheduler, queue: JobsQueue) 
   app.post('/api/check-all', async (c) => {
     await scheduler.checkNow();
     return c.json({ success: true, message: 'Check triggered' });
+  });
+
+  // Summarize a one-time page and send to Telegram
+  app.post('/api/summarize-once', async (c) => {
+    try {
+      const body = await c.req.json();
+      const data = summarizeOnceSchema.parse(body);
+      const { url, channelId } = data;
+
+      // Initialize services
+      const fetcher = new Fetcher();
+      const markdownConverter = new MarkdownConverter();
+      const summaryService = new SummaryService(db, {
+        droid: new DroidSummarizer(),
+        aisdk: new AISDKSummarizer(),
+      });
+      const notificationService = new NotificationService(db);
+
+      // Extract company/domain name from URL for better summary
+      let monitorName = 'One-time Page';
+      try {
+        const urlObj = new URL(url);
+        // Extract domain name (e.g., "elevenlabs.io" -> "ElevenLabs")
+        const hostname = urlObj.hostname;
+        // Remove www. prefix if present
+        const domain = hostname.replace(/^www\./i, '');
+        // Extract the main domain part (e.g., "elevenlabs.io" -> "elevenlabs")
+        const domainParts = domain.split('.');
+        
+        // Handle special cases for well-known domains (check full domain and subdomains)
+        const domainLower = domain.toLowerCase();
+        if (domainLower.includes('google.com') || domainLower.includes('blog.google') || domainLower.includes('googleblog')) {
+          monitorName = 'Google';
+        } else if (domainLower.includes('microsoft.com') || domainLower.includes('microsoft.')) {
+          monitorName = 'Microsoft';
+        } else if (domainLower.includes('apple.com') || domainLower.includes('apple.')) {
+          monitorName = 'Apple';
+        } else if (domainLower.includes('anthropic.com') || domainLower.includes('anthropic.')) {
+          monitorName = 'Anthropic';
+        } else if (domainLower.includes('openai.com') || domainLower.includes('openai.')) {
+          monitorName = 'OpenAI';
+        } else if (domainLower.includes('elevenlabs.io') || domainLower.includes('elevenlabs.')) {
+          monitorName = 'ElevenLabs';
+        } else {
+          // For other domains, use the main domain part (usually the second-to-last part for TLDs)
+          // e.g., "blog.example.com" -> "example", "example.com" -> "example"
+          let mainDomain = domainParts[0];
+          if (domainParts.length >= 2) {
+            // For domains like "blog.google.com", take "google"
+            // For domains like "elevenlabs.io", take "elevenlabs"
+            const tldIndex = domainParts.length - 1;
+            mainDomain = domainParts[tldIndex - 1] || domainParts[0];
+          }
+          // Capitalize first letter of each word
+          monitorName = mainDomain
+            .split(/[-_]/)
+            .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+            .join('');
+        }
+      } catch {
+        monitorName = 'One-time Page';
+      }
+
+      // Create a temporary monitor object for fetching
+      const tempMonitor = {
+        id: 0,
+        name: monitorName,
+        url,
+        intervalMinutes: 60,
+        type: 'webpage' as const,
+        selector: null,
+        includeLink: true,
+        active: true,
+        createdAt: new Date().toISOString(),
+        lastCheckedAt: null,
+      } as Monitor;
+
+      // Fetch the page
+      const fetchResult = await fetcher.check(tempMonitor);
+      if (!fetchResult.success || !fetchResult.content) {
+        return c.json({ error: fetchResult.error || 'Failed to fetch page' }, 400);
+      }
+
+      // Convert to markdown if HTML
+      let contentMd = fetchResult.content;
+      const isHtml = (content: string): boolean => {
+        const trimmed = content.trim();
+        return trimmed.startsWith('<!') || trimmed.includes('<html') || trimmed.includes('<body');
+      };
+      if (tempMonitor.type === 'webpage' && isHtml(contentMd)) {
+        contentMd = markdownConverter.convert(contentMd);
+      }
+
+      // Create a diff-like markdown showing all content as additions
+      const diffMarkdown = contentMd
+        .split('\n')
+        .map((line) => `+ ${line}`)
+        .join('\n');
+
+      // Generate summary
+      const summaryResult = await summaryService.generateSummary(tempMonitor, diffMarkdown);
+      if (!summaryResult || !summaryResult.text) {
+        return c.json({ error: 'Failed to generate summary' }, 500);
+      }
+
+      const structured = summaryResult.structured;
+      if (structured && structured.status === 'no_changes') {
+        return c.json({ error: 'No material content found to summarize' }, 400);
+      }
+
+      // Get Telegram channels (check both active and inactive)
+      const allTelegramChannels = db.listNotificationChannels(false).filter((ch) => ch.type === 'telegram');
+      let channels = db.listNotificationChannels(true).filter((ch) => ch.type === 'telegram');
+      
+      if (channelId) {
+        const specificChannel = allTelegramChannels.find((ch) => ch.id === channelId);
+        if (!specificChannel) {
+          return c.json({ error: `Telegram channel with ID ${channelId} not found` }, 404);
+        }
+        channels = [specificChannel];
+      }
+
+      // Check for environment variables as fallback
+      const envBotToken = process.env.TELEGRAM_BOT_TOKEN;
+      const envChatId = process.env.TELEGRAM_CHAT_ID;
+      const hasEnvVars = envBotToken && envChatId;
+
+      // Build channels with config - try database first, fall back to env vars
+      let channelsWithConfig: ChannelWithConfig[] = [];
+
+      // Try to decrypt channel configs from database
+      if (channels.length > 0) {
+        channelsWithConfig = channels
+          .map((ch) => {
+            try {
+              const raw = encryption.decrypt(ch.encryptedConfig);
+              const config = TelegramConfigSchema.parse(raw);
+              return {
+                ...ch,
+                config,
+                includeLink: true,
+              };
+            } catch (err) {
+              console.error(`[${new Date().toISOString()}] Failed to decrypt/parse channel ${ch.id}: ${err instanceof Error ? err.message : String(err)}`);
+              return null;
+            }
+          })
+          .filter((ch): ch is NonNullable<typeof ch> => ch !== null);
+      }
+
+      // If no valid channels from database, try environment variables
+      if (channelsWithConfig.length === 0 && hasEnvVars) {
+        // Use environment variables as fallback
+        try {
+          const envConfig = TelegramConfigSchema.parse({
+            botToken: envBotToken,
+            chatId: envChatId,
+          });
+          // Create a temporary channel object that matches ChannelWithConfig structure
+          channelsWithConfig = [{
+            id: 0,
+            name: 'Telegram (from .env)',
+            type: 'telegram',
+            config: envConfig,
+            includeLink: true,
+            active: true,
+            createdAt: new Date().toISOString(),
+            encryptedConfig: '', // Not needed when using env vars directly
+          } as ChannelWithConfig];
+        } catch (err) {
+          return c.json({ 
+            error: 'Invalid Telegram configuration in environment variables.',
+            hint: 'Check that TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID are set correctly in .env'
+          }, 400);
+        }
+      }
+
+      // Final check - if still no valid channels, return error
+      if (channelsWithConfig.length === 0) {
+        if (allTelegramChannels.length === 0 && !hasEnvVars) {
+          return c.json({ 
+            error: 'No Telegram channels configured. Please create a Telegram notification channel first using the TUI or API, or set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in .env.',
+            hint: 'Use the TUI (bun changes) to add a Telegram channel, POST to /api/channels, or set environment variables'
+          }, 404);
+        }
+        
+        if (channels.length === 0 && allTelegramChannels.length > 0) {
+          const inactiveCount = allTelegramChannels.length;
+          return c.json({ 
+            error: `No active Telegram channels found. You have ${inactiveCount} inactive Telegram channel(s).`,
+            hint: 'Activate a Telegram channel, specify a channelId in the request, or set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in .env'
+          }, 404);
+        }
+
+        return c.json({ 
+          error: 'No valid Telegram channel configurations found. Channel configs may be corrupted or invalid.',
+          hint: 'Try recreating your Telegram channels, check channel configurations, or set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in .env'
+        }, 400);
+      }
+
+      // Create a temporary change object for notification
+      // Note: afterSnapshotId is required in schema but we use a type assertion
+      // since this is a one-time summary that doesn't need real snapshots
+      const tempChange = {
+        id: 0,
+        monitorId: tempMonitor.id,
+        beforeSnapshotId: null,
+        afterSnapshotId: 0, // Required by schema but not used for one-time summaries
+        summary: summaryResult.text,
+        aiSummary: summaryResult.text,
+        diffMd: diffMarkdown,
+        diffType: 'addition' as const,
+        releaseVersion: null,
+        aiSummaryMeta: structured ? JSON.stringify(structured) : null,
+        createdAt: new Date().toISOString(),
+      } as Change;
+
+      // Send notifications
+      const results = await notificationService.sendNotifications(
+        tempChange,
+        tempMonitor,
+        channelsWithConfig,
+        url,
+        { allowRepeat: true }
+      );
+
+      const successCount = results.filter((r) => r.ok).length;
+      if (successCount === 0) {
+        const errors = results.map((r) => r.error).filter(Boolean);
+        return c.json({ 
+          error: 'Failed to send notifications', 
+          details: errors 
+        }, 500);
+      }
+
+      return c.json({ 
+        success: true, 
+        message: `Summary sent to ${successCount} channel(s)`,
+        summary: summaryResult.text,
+        channelsSent: successCount,
+        totalChannels: channelsWithConfig.length,
+      });
+    } catch (error: unknown) {
+      const e = error as Error;
+      return c.json({ error: e.message || 'Invalid request' }, 400);
+    }
   });
 
   return app;

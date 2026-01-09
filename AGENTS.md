@@ -89,4 +89,5 @@ cp "data/backups/<backup>.db" "${DATABASE_PATH:-./data/changes.db}"
 - `GET /api/changes/:id`
 - `GET /api/job-events`
 - `POST /api/check-all`
+- `POST /api/summarize-once` - Summarize a one-time page and send to Telegram (body: `{ url: string, channelId?: number }`)
 - `GET /health`

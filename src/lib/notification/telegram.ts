@@ -104,7 +104,8 @@ export class TelegramNotifier implements Notifier<TelegramConfig> {
     let addedLink = false;
     
     // Extract company name from monitor name (e.g., "Anthropic claude code" -> "Anthropic")
-    const companyName = monitor.name.split(' ')[0] || 'Anthropic';
+    // Use the monitor name directly if it's a single word, otherwise take first word
+    const companyName = monitor.name.split(' ')[0] || monitor.name || 'Unknown';
     const version = change.releaseVersion || null;
     
     // Add fun header with company and version (no date)

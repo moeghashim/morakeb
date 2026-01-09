@@ -197,17 +197,24 @@
 </head>
 <body>
   <div class="container">
-    <h1>Add Monitor</h1>
-    <div class="step-indicator" id="stepIndicator">Step 1 of 4</div>
+    <h1>Morakeb</h1>
+    <div style="display: flex; gap: 12px; margin-bottom: 24px; border-bottom: 1px solid #444; padding-bottom: 12px;">
+      <button type="button" class="btn-secondary" id="tabMonitor" style="flex: 1; background: #4a9eff; color: #fff;">Add Monitor</button>
+      <button type="button" class="btn-secondary" id="tabSummarize" style="flex: 1;">Summarize Once</button>
+    </div>
 
-    <form id="monitorForm">
+    <!-- Add Monitor Form -->
+    <div id="monitorSection">
+      <div class="step-indicator" id="stepIndicator">Step 1 of 4</div>
+
+      <form id="monitorForm">
       <!-- Step 1: Name -->
       <div class="step active" data-step="0">
         <div class="form-group">
           <label for="name">Enter monitor name:</label>
           <div class="hint">e.g., "My blog", "GitHub API", etc.</div>
           <input type="text" id="name" name="name" placeholder="My blog" required autofocus>
-          <div class="error" id="nameError"></div>
+          <div class="error" id="nameError"> </div>
         </div>
       </div>
 
@@ -255,6 +262,35 @@
         <button type="submit" class="btn-primary" id="submitBtn">Next</button>
       </div>
     </form>
+    </div>
+
+    <!-- Summarize Once Form -->
+    <div id="summarizeSection" style="display: none;">
+      <h2 style="color: #fff; margin-bottom: 8px; font-size: 20px;">Summarize One-Time Page</h2>
+      <div class="hint" style="margin-bottom: 24px;">Enter a URL to summarize and send to Telegram immediately (no monitor needed)</div>
+
+      <form id="summarizeForm">
+        <div class="form-group">
+          <label for="summarizeUrl">Enter URL to summarize:</label>
+          <div class="hint">e.g., https://example.com/article</div>
+          <input type="url" id="summarizeUrl" name="url" placeholder="https://example.com/article" required autofocus>
+          <div class="error" id="summarizeUrlError"></div>
+        </div>
+
+        <div class="form-group">
+          <label for="channelId">Telegram Channel (optional):</label>
+          <div class="hint">Leave empty to send to all active Telegram channels</div>
+          <input type="number" id="channelId" name="channelId" placeholder="Channel ID (optional)" min="1">
+          <div class="error" id="channelIdError"></div>
+        </div>
+
+        <div class="success" id="summarizeSuccessMessage"></div>
+
+        <div class="button-group">
+          <button type="submit" class="btn-primary" id="summarizeBtn">Summarize & Send</button>
+        </div>
+      </form>
+    </div>
   </div>
 
   <script>
@@ -274,6 +310,17 @@
     const submitBtn = document.getElementById('submitBtn');
     const form = document.getElementById('monitorForm');
     const successMessage = document.getElementById('successMessage');
+
+    // Debug: Check if elements are found
+    if (!form) {
+      console.error('Form element not found!');
+    }
+    if (!submitBtn) {
+      console.error('Submit button not found!');
+    }
+    if (steps.length === 0) {
+      console.error('No steps found!');
+    }
 
     function updateStepIndicator() {
       stepIndicator.textContent = `Step ${currentStep + 1} of ${totalSteps}`;
@@ -296,34 +343,50 @@
 
     function validateStep(step) {
       const stepEl = steps[step];
+      if (!stepEl) {
+        console.error('Step element not found for step', step);
+        return false;
+      }
       const input = stepEl.querySelector('input, select');
       const errorEl = stepEl.querySelector('.error');
       
-      if (!input) return true;
+      if (!input) {
+        console.log('No input found for step', step);
+        return true;
+      }
 
       const value = input.value.trim();
+      console.log('Validating step', step, 'with value:', value);
 
       // Clear previous error
-      errorEl.classList.remove('show');
-      errorEl.textContent = '';
+      if (errorEl) {
+        errorEl.classList.remove('show');
+        errorEl.textContent = '';
+      }
 
       // Step-specific validation
       if (step === 0) {
         if (!value) {
-          errorEl.textContent = 'Name is required';
-          errorEl.classList.add('show');
+          if (errorEl) {
+            errorEl.textContent = 'Name is required';
+            errorEl.classList.add('show');
+          }
           return false;
         }
         if (value.length > 255) {
-          errorEl.textContent = 'Name must be 255 characters or less';
-          errorEl.classList.add('show');
+          if (errorEl) {
+            errorEl.textContent = 'Name must be 255 characters or less';
+            errorEl.classList.add('show');
+          }
           return false;
         }
         formData.name = value;
       } else if (step === 1) {
         if (!value) {
-          errorEl.textContent = 'URL is required';
-          errorEl.classList.add('show');
+          if (errorEl) {
+            errorEl.textContent = 'URL is required';
+            errorEl.classList.add('show');
+          }
           return false;
         }
         try {
@@ -333,23 +396,29 @@
           }
           formData.url = value;
         } catch {
-          errorEl.textContent = 'Invalid URL. Use http:// or https://';
-          errorEl.classList.add('show');
+          if (errorEl) {
+            errorEl.textContent = 'Invalid URL. Use http:// or https://';
+            errorEl.classList.add('show');
+          }
           return false;
         }
       } else if (step === 2) {
         const validTypes = ['webpage', 'api', 'markdown', 'xml'];
         if (!validTypes.includes(value.toLowerCase())) {
-          errorEl.textContent = 'Invalid type. Use one of: webpage, api, markdown, xml';
-          errorEl.classList.add('show');
+          if (errorEl) {
+            errorEl.textContent = 'Invalid type. Use one of: webpage, api, markdown, xml';
+            errorEl.classList.add('show');
+          }
           return false;
         }
         formData.type = value.toLowerCase();
       } else if (step === 3) {
         const interval = parseInt(value);
         if (!value || isNaN(interval) || interval < 1) {
-          errorEl.textContent = 'Interval must be a positive number';
-          errorEl.classList.add('show');
+          if (errorEl) {
+            errorEl.textContent = 'Interval must be a positive number';
+            errorEl.classList.add('show');
+          }
           return false;
         }
         formData.intervalMinutes = interval;
@@ -418,11 +487,14 @@
 
     form.addEventListener('submit', (e) => {
       e.preventDefault();
+      console.log('Form submit event triggered, current step:', currentStep);
       
       if (!validateStep(currentStep)) {
+        console.log('Validation failed for step', currentStep);
         return;
       }
 
+      console.log('Validation passed, moving to next step');
       if (currentStep < totalSteps - 1) {
         currentStep++;
         showStep(currentStep);
@@ -430,6 +502,15 @@
         submitForm();
       }
     });
+
+    // Also handle button click directly as fallback
+    if (submitBtn) {
+      submitBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        console.log('Button clicked directly');
+        form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+      });
+    }
 
     backBtn.addEventListener('click', () => {
       if (currentStep > 0) {
@@ -448,6 +529,142 @@
 
     // Initialize
     showStep(0);
+
+    // Tab switching
+    const tabMonitor = document.getElementById('tabMonitor');
+    const tabSummarize = document.getElementById('tabSummarize');
+    const monitorSection = document.getElementById('monitorSection');
+    const summarizeSection = document.getElementById('summarizeSection');
+
+    tabMonitor.addEventListener('click', () => {
+      monitorSection.style.display = 'block';
+      summarizeSection.style.display = 'none';
+      tabMonitor.style.background = '#4a9eff';
+      tabMonitor.style.color = '#fff';
+      tabSummarize.style.background = '#444';
+      tabSummarize.style.color = '#e0e0e0';
+    });
+
+    tabSummarize.addEventListener('click', () => {
+      monitorSection.style.display = 'none';
+      summarizeSection.style.display = 'block';
+      tabSummarize.style.background = '#4a9eff';
+      tabSummarize.style.color = '#fff';
+      tabMonitor.style.background = '#444';
+      tabMonitor.style.color = '#e0e0e0';
+    });
+
+    // Summarize form handling
+    const summarizeForm = document.getElementById('summarizeForm');
+    const summarizeBtn = document.getElementById('summarizeBtn');
+    const summarizeSuccessMessage = document.getElementById('summarizeSuccessMessage');
+    const summarizeUrlError = document.getElementById('summarizeUrlError');
+
+    summarizeForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      
+      const url = document.getElementById('summarizeUrl').value.trim();
+      const channelId = document.getElementById('channelId').value.trim();
+
+      // Clear previous errors
+      summarizeUrlError.classList.remove('show');
+      summarizeUrlError.textContent = '';
+      summarizeSuccessMessage.classList.remove('show');
+
+      // Validate URL
+      if (!url) {
+        summarizeUrlError.textContent = 'URL is required';
+        summarizeUrlError.classList.add('show');
+        return;
+      }
+
+      try {
+        const urlObj = new URL(url);
+        if (urlObj.protocol !== 'http:' && urlObj.protocol !== 'https:') {
+          throw new Error('Invalid protocol');
+        }
+      } catch {
+        summarizeUrlError.textContent = 'Invalid URL. Use http:// or https://';
+        summarizeUrlError.classList.add('show');
+        return;
+      }
+
+      // Validate channelId if provided
+      if (channelId && (isNaN(parseInt(channelId)) || parseInt(channelId) < 1)) {
+        summarizeUrlError.textContent = 'Channel ID must be a positive number';
+        summarizeUrlError.classList.add('show');
+        return;
+      }
+
+      summarizeBtn.disabled = true;
+      summarizeBtn.innerHTML = 'Summarizing...<span class="loading"></span>';
+
+      try {
+        const body = { url };
+        if (channelId) {
+          body.channelId = parseInt(channelId);
+        }
+
+        const response = await fetch(`${API_BASE}/api/summarize-once`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(body)
+        });
+
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.error || 'Failed to summarize page');
+        }
+
+        const result = await response.json();
+
+        summarizeSuccessMessage.innerHTML = `
+          <h3>✓ Summary sent successfully!</h3>
+          <p style="margin-top: 8px;"><strong>Sent to:</strong> ${result.channelsSent} of ${result.totalChannels} channel(s)</p>
+          <div style="margin-top: 12px; padding: 12px; background: #1a1a1a; border-radius: 4px; max-height: 300px; overflow-y: auto;">
+            <strong>Summary:</strong>
+            <pre style="white-space: pre-wrap; font-family: inherit; font-size: 12px; color: #aaa; margin-top: 8px;">${result.summary || 'No summary text'}</pre>
+          </div>
+        `;
+        summarizeSuccessMessage.classList.add('show');
+
+        // Reset form
+        summarizeForm.reset();
+        summarizeBtn.disabled = false;
+        summarizeBtn.textContent = 'Summarize & Send';
+
+      } catch (error) {
+        let errorMessage = error.message || 'Failed to summarize page. Make sure the API server is running at http://127.0.0.1:3000';
+        
+        // Try to parse error response for better error messages
+        try {
+          const response = await fetch(`${API_BASE}/api/summarize-once`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(body)
+          });
+          if (!response.ok) {
+            const errorData = await response.json();
+            errorMessage = errorData.error || errorMessage;
+            if (errorData.hint) {
+              errorMessage += `\n\nHint: ${errorData.hint}`;
+            }
+          }
+        } catch {
+          // Use the original error message if parsing fails
+        }
+        
+        summarizeUrlError.textContent = errorMessage;
+        summarizeUrlError.classList.add('show');
+        summarizeUrlError.style.whiteSpace = 'pre-wrap';
+        summarizeBtn.disabled = false;
+        summarizeBtn.textContent = 'Summarize & Send';
+      }
+    });
   </script>
 </body>
 </html>
