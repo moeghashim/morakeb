@@ -7,7 +7,7 @@ export function buildSystemdUnit(appDir: string, user: string, home: string): st
   const bunDir = path.join(home, '.bun/bin');
   return `
 [Unit]
-Description=Changes URL monitor
+Description=Morakeb URL monitor
 After=network.target
 
 [Service]

@@ -445,7 +445,7 @@ async function ensureSystemd(
   
   // Always generate the service file to ensure it's correct
   const unit = `[Unit]
-Description=Changes URL monitor
+Description=Morakeb URL monitor
 After=network.target
 
 [Service]

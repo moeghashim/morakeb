@@ -53,8 +53,8 @@ export function normalizeStructuredSummary(raw: unknown): StructuredSummary | nu
   if (rawStatus !== 'ok' && rawStatus !== 'no_changes') return null;
 
   const rawTitle = typeof obj.title === 'string' ? obj.title.trim() : undefined;
-  const features = trimList(obj.features ?? (obj as any).feature_items, 12);
-  const fixes = trimList(obj.fixes ?? (obj as any).fix_items, 8);
+  const features = trimList(obj.features ?? (obj as any).feature_items, 50);
+  const fixes = trimList(obj.fixes ?? (obj as any).fix_items, 50);
 
   const shouldNotify = coerceBool(
     obj.should_notify ?? (obj as any).shouldNotify,
@@ -86,7 +86,7 @@ export function normalizeStructuredSummary(raw: unknown): StructuredSummary | nu
  */
 export function enforceNotificationPolicy(summary: StructuredSummary): StructuredSummary {
   if (summary.status !== 'ok') {
-    return { ...summary, shouldNotify: false, skipReason: summary.skipReason ?? 'no material changes' };
+    return { ...summary, shouldNotify: false, skipReason: summary.skipReason ?? 'لا توجد تغييرات مهمة' };
   }
 
   const featuresCount = summary.features.length;
@@ -96,12 +96,12 @@ export function enforceNotificationPolicy(summary: StructuredSummary): Structure
     return {
       ...summary,
       shouldNotify: false,
-      skipReason: summary.skipReason ?? 'no actionable changes detected',
+      skipReason: summary.skipReason ?? 'لم يتم اكتشاف تغييرات قابلة للتنفيذ',
     };
   }
 
   if (featuresCount === 0 && fixesCount > 0 && fixesCount <= 2) {
-    const reason = fixesCount === 1 ? 'single bug fix only' : 'two bug fixes only';
+    const reason = fixesCount === 1 ? 'إصلاح خطأ واحد فقط' : 'إصلاحان فقط';
     return {
       ...summary,
       shouldNotify: false,
@@ -112,26 +112,48 @@ export function enforceNotificationPolicy(summary: StructuredSummary): Structure
   return summary;
 }
 
-export function formatSummaryMarkdown(summary: StructuredSummary): string | null {
+export function formatSummaryMarkdown(
+  summary: StructuredSummary,
+  options?: { version?: string | null; date?: string | null; companyName?: string }
+): string | null {
   if (summary.status !== 'ok') return null;
   const lines: string[] = [];
+  
+  // Build header with company and version (no date)
+  const companyName = options?.companyName || 'Anthropic';
+  const version = options?.version;
+  
+  let header = '';
+  if (version) {
+    // Wrap version number in LTR markers to keep it left-to-right in RTL text
+    const ltrVersion = `\u202A${version}\u202C`;
+    header = `${companyName} تطلق الإصدار ${ltrVersion}`;
+  } else {
+    header = `${companyName}`;
+  }
+  lines.push(`**${header}**`);
+  lines.push('');
+  
   const title = (summary.title || '').trim();
-  if (title) {
+  if (title && !title.includes(companyName)) {
     lines.push(`**${title.slice(0, 200)}**`);
+    lines.push('');
   }
 
   if (summary.features.length > 0) {
-    lines.push('**Features**');
+    lines.push('**الميزات الجديدة**');
     for (const feature of summary.features) {
       lines.push(`- ${feature}`);
     }
+    lines.push('');
   }
 
   if (summary.fixes.length > 0) {
-    lines.push('**Fixes**');
-    for (const fix of summary.fixes.slice(0, 5)) {
+    lines.push('**التحسينات والإصلاحات**');
+    for (const fix of summary.fixes) {
       lines.push(`- ${fix}`);
     }
+    lines.push('');
   }
 
   if (lines.length === 0) return null;
@@ -161,8 +183,8 @@ export type AggregatedSummary = {
   versions: string[];
 };
 
-const MAX_FEATURE_BULLETS = 18;
-const MAX_FIX_BULLETS = 12;
+const MAX_FEATURE_BULLETS = 50;
+const MAX_FIX_BULLETS = 50;
 const MAX_HIGHLIGHTS = 12;
 
 const fallbackSummaryText = (change: Change): string | null => {
@@ -188,11 +210,11 @@ export function buildAggregatedSummary(
   let title = options.headingOverride;
   if (!title) {
     if (firstVersion && lastVersion && firstVersion !== lastVersion) {
-      title = `${monitorName}: changes from ${firstVersion} to ${lastVersion}`;
+      title = `${monitorName}: التغييرات من ${firstVersion} إلى ${lastVersion}`;
     } else if (lastVersion) {
-      title = `${monitorName} ${lastVersion} released`;
+      title = `${monitorName} ${lastVersion} تم إصداره`;
     } else {
-      title = `${monitorName}: latest updates`;
+      title = `${monitorName}: آخر التحديثات`;
     }
   }
 
@@ -225,25 +247,25 @@ export function buildAggregatedSummary(
   const lines: string[] = [`**${title}**`];
 
   if (options.timeframe) {
-    lines.push(`Period: ${options.timeframe.start} → ${options.timeframe.end}`);
+    lines.push(`الفترة: ${options.timeframe.start} → ${options.timeframe.end}`);
   }
 
   if (featureBullets.length > 0) {
-    lines.push('**Features**');
+    lines.push('**الميزات**');
     for (const bullet of featureBullets.slice(0, MAX_FEATURE_BULLETS)) {
       lines.push(`- ${bullet}`);
     }
   }
 
   if (fixBullets.length > 0) {
-    lines.push('**Fixes**');
+    lines.push('**الإصلاحات**');
     for (const bullet of fixBullets.slice(0, MAX_FIX_BULLETS)) {
       lines.push(`- ${bullet}`);
     }
   }
 
   if (highlightBullets.length > 0 && featureBullets.length === 0 && fixBullets.length === 0) {
-    lines.push('**Highlights**');
+    lines.push('**أبرز التغييرات**');
     for (const bullet of highlightBullets.slice(0, MAX_HIGHLIGHTS)) {
       lines.push(`- ${bullet}`);
     }

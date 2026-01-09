@@ -1,8 +1,10 @@
 import type { NotificationChannelPlugin } from './types';
 import { telegramNotificationPlugin } from './telegram';
+import { instagramNotificationPlugin } from './instagram';
 
 const registry: NotificationChannelPlugin[] = [
   telegramNotificationPlugin,
+  instagramNotificationPlugin,
 ];
 
 export function listNotificationChannelPlugins(): NotificationChannelPlugin[] {

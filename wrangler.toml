@@ -1,0 +1,29 @@
+name = "morakeb"
+main = "src/cloudflare/index.ts"
+compatibility_date = "2024-01-08"
+compatibility_flags = ["nodejs_compat"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "termstrust-db"
+database_id = "3ae511e3-8dce-4b5c-af50-5621d4e2b4fb"
+migrations_dir = "drizzle"
+
+# Queues require Workers Paid plan - commented out for free tier
+# [[queues.producers]]
+# queue = "monitor-checks"
+# binding = "MONITOR_QUEUE"
+
+# [[queues.consumers]]
+# queue = "monitor-checks"
+# max_batch_size = 10
+# max_batch_timeout = 30
+
+# Cron trigger: once per day at midnight UTC
+# Note: Cron triggers require the worker to have a scheduled handler
+[triggers]
+crons = ["0 0 * * *"]
+
+[vars]
+ENCRYPTION_KEY = "your-encryption-key-here"
+TELEGRAM_WEBHOOK_SECRET = "your-webhook-secret-here"

@@ -72,7 +72,7 @@ export class TelegramNotifier implements Notifier<TelegramConfig> {
 
     if (aiSummary) {
       const linkToDisplay = monitor.includeLink ? (displayUrl || monitor.url) : '';
-      return this.formatSummaryHtml(String(aiSummary), linkToDisplay);
+      return this.formatSummaryHtml(String(aiSummary), linkToDisplay, change, monitor);
     }
 
     const diff = String(change.diffMd ?? '');
@@ -98,10 +98,26 @@ export class TelegramNotifier implements Notifier<TelegramConfig> {
       .replace(/"/g, '&quot;');
   }
 
-  private formatSummaryHtml(summary: string, url: string): string {
+  private formatSummaryHtml(summary: string, url: string, change: Change, monitor: Monitor): string {
     const lines = summary.split('\n');
     const out: string[] = [];
     let addedLink = false;
+    
+    // Extract company name from monitor name (e.g., "Anthropic claude code" -> "Anthropic")
+    const companyName = monitor.name.split(' ')[0] || 'Anthropic';
+    const version = change.releaseVersion || null;
+    
+    // Add fun header with company and version (no date)
+    // Wrap version number in LTR markers to keep it left-to-right in RTL text
+    let header = '';
+    if (version) {
+      const ltrVersion = `\u202A${version}\u202C`;
+      header = `${companyName} تطلق الإصدار ${ltrVersion}`;
+    } else {
+      header = `${companyName}`;
+    }
+    out.push(`<b>${this.escapeHtml(header)}</b>`);
+    out.push('');
 
     for (let i = 0; i < lines.length; i++) {
       const raw = lines[i].trimEnd();
@@ -110,15 +126,26 @@ export class TelegramNotifier implements Notifier<TelegramConfig> {
       if (i === 0) {
         const m = raw.match(/\*\*(.*?)\*\*/);
         const title = m ? m[1] : raw.replace(/^\*+|\*+$/g, '');
-        out.push(`<b>${this.escapeHtml(title)}</b>`);
-        out.push('');
+        // Skip if title already includes company/version info
+        if (!title.includes(companyName) && !title.includes('تطلق')) {
+          out.push(`<b>${this.escapeHtml(title)}</b>`);
+          out.push('');
+        }
         continue;
       }
 
       const headingMatch = raw.match(/^\*\*(.+)\*\*$/);
       if (headingMatch) {
         if (out.length > 0 && out[out.length - 1] !== '') out.push('');
-        out.push(`<b>${this.escapeHtml(headingMatch[1])}</b>`);
+        const heading = headingMatch[1];
+        // Enhance headings for better presentation
+        let enhancedHeading = heading;
+        if (heading === 'الميزات' || heading.includes('الميزات') && !heading.includes('الجديدة')) {
+          enhancedHeading = heading.replace('الميزات', 'الميزات الجديدة');
+        } else if (heading === 'الإصلاحات' || heading.includes('الإصلاحات')) {
+          enhancedHeading = heading.replace('الإصلاحات', 'التحسينات والإصلاحات');
+        }
+        out.push(`<b>${this.escapeHtml(enhancedHeading)}</b>`);
         continue;
       }
 

@@ -48,14 +48,14 @@ export class DroidSummarizer implements Summarizer {
           const parsed = JSON.parse(raw);
           const structuredRaw = normalizeStructuredSummary(parsed);
           if (!structuredRaw) {
-            if (/^\s*No changes\s*$/i.test(raw)) {
-              return buildNoChanges('model reported no changes');
+            if (/^\s*(No changes|لا توجد تغييرات|لا تغييرات)\s*$/i.test(raw)) {
+              return buildNoChanges('أبلغ النموذج أنه لا توجد تغييرات');
             }
             return raw ? { text: raw.slice(0, MAX_SUMMARY_LENGTH), structured: null } : null;
           }
           const structured = enforceNotificationPolicy(structuredRaw);
           if (structured.status === 'no_changes') {
-            return buildNoChanges(structured.skipReason ?? 'no changes');
+            return buildNoChanges(structured.skipReason ?? 'لا توجد تغييرات');
           }
           const text = formatSummaryMarkdown(structured);
           return {
@@ -63,8 +63,8 @@ export class DroidSummarizer implements Summarizer {
             structured,
           };
         } catch {
-          if (/^\s*No changes\s*$/i.test(raw)) {
-            return buildNoChanges('model reported no changes');
+          if (/^\s*(No changes|لا توجد تغييرات|لا تغييرات)\s*$/i.test(raw)) {
+            return buildNoChanges('أبلغ النموذج أنه لا توجد تغييرات');
           }
           return raw ? { text: raw.slice(0, MAX_SUMMARY_LENGTH), structured: null } : null;
         }

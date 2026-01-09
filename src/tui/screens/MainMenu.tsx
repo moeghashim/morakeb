@@ -16,7 +16,7 @@ export function MainMenu() {
 
   return (
     <Box flexDirection="column" padding={1}>
-      <Header title="Changes monitor" />
+      <Header title="Morakeb monitor" />
       <SelectMenu
         items={items}
         hint={'Use ↑↓ to navigate, Enter to select, q to quit'}

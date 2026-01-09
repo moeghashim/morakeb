@@ -63,7 +63,7 @@ export class SummaryService {
         if (structured.status === 'no_changes') {
           return {
             text: null,
-            structured: { ...structured, shouldNotify: false, skipReason: structured.skipReason ?? 'no material changes' },
+            structured: { ...structured, shouldNotify: false, skipReason: structured.skipReason ?? 'لا توجد تغييرات مهمة' },
           };
         }
         return { text, structured };
@@ -78,7 +78,7 @@ export class SummaryService {
             features: [],
             fixes: [],
             shouldNotify: false,
-            skipReason: 'no material changes',
+            skipReason: 'لا توجد تغييرات مهمة',
             importance: undefined,
           },
         };

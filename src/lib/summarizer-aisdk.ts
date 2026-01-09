@@ -89,8 +89,8 @@ export class AISDKSummarizer implements Summarizer {
     const schema = z.object({
       status: z.enum(['ok', 'no_changes']),
       title: z.string().min(1).max(200).optional(),
-      features: z.array(z.string().min(1).max(300)).max(12).optional(),
-      fixes: z.array(z.string().min(1).max(300)).max(5).optional(),
+      features: z.array(z.string().min(1).max(300)).optional(),
+      fixes: z.array(z.string().min(1).max(300)).optional(),
       should_notify: z.boolean(),
       skip_reason: z.string().max(200).optional(),
       importance: z.enum(['high', 'medium', 'low']).optional(),

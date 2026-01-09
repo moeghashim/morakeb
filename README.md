@@ -1,5 +1,5 @@
 <div align="center">
-  <strong>Changes</strong> is a self‑hosted content change monitor with a TUI.<br />
+  <strong>Morakeb</strong> is a self‑hosted content change monitor with a TUI.<br />
   Track pages, feeds, and APIs; get readable diffs and optional AI summaries.
 
   <br /><br />
@@ -16,10 +16,10 @@ Requirements: Bun 1.3+, SQLite (bundled with Bun), a shell.
 
 Clone and install:
 ```bash
-git clone https://github.com/iannuttall/changes.git
+git clone https://github.com/iannuttall/morakeb.git
 ```
 ```bash
-cd changes
+cd morakeb
 ```
 ```bash
 bun install
@@ -35,7 +35,7 @@ Run the service and TUI (local dev):
 bun dev
 ```
 ```bash
-bun changes
+bun morakeb
 ```
 
 ## Features
@@ -56,7 +56,7 @@ bun changes
 
 Start:
 ```bash
-bun changes
+bun morakeb
 ```
 - Monitors: Add → List → Detail → Link notification channel
 - Settings: Choose AI provider/model, verify keys, enable/disable summaries
@@ -97,7 +97,7 @@ After it finishes:
 - The app runs on the server.
 - On your computer, open the dashboard with:
 ```bash
-bun changes --remote
+bun morakeb --remote
 ```
 
 ## AI Summaries (details)

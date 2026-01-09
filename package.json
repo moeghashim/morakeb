@@ -1,5 +1,5 @@
 {
-  "name": "changes",
+  "name": "morakeb",
   "version": "0.1.0",
   "description": "Simple open-source URL monitoring tool with notifications",
   "type": "module",
@@ -7,12 +7,14 @@
     "dev": "bun run --watch src/index.ts",
     "start": "bun run src/index.ts",
     "tui": "bun run src/tui/index.tsx",
+    "morakeb": "bun run src/tui/index.tsx",
     "changes": "bun run src/tui/index.tsx",
     "db": "bun run src/db/browser.tsx",
     "setup": "bun run src/setup/index.tsx",
     "setup:local": "bun run scripts/setup-local.ts",
     "setup:vps": "bun run src/setup-vps/index.tsx",
     "deploy": "bun run src/setup/deploy.ts",
+    "deploy:agent": "bun run scripts/deploy-agent.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "bun run src/db/migrate.ts",
     "db:open": "bun run src/db/open.ts",
@@ -45,10 +47,11 @@
     "zod": "^3.24.1"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260108.0",
     "@types/bun": "latest",
     "@types/diff": "^8.0.0",
-    "@types/react-dom": "^18.3.0",
     "@types/react": "^18.3.17",
+    "@types/react-dom": "^18.3.0",
     "@types/turndown": "^5.0.5",
     "drizzle-kit": "^0.31.5",
     "typescript": "^5.8.2"
