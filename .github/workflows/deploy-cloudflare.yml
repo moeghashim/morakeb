@@ -8,6 +8,8 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    # Only run if secrets are configured
+    if: ${{ secrets.CLOUDFLARE_API_TOKEN != '' && secrets.CLOUDFLARE_ACCOUNT_ID != '' }}
     steps:
       - uses: actions/checkout@v4
       
@@ -19,9 +21,29 @@ jobs:
       - name: Install dependencies
         run: bun install
       
+      - name: Check required secrets
+        run: |
+          if [ -z "${{ secrets.CLOUDFLARE_API_TOKEN }}" ] || [ -z "${{ secrets.CLOUDFLARE_ACCOUNT_ID }}" ]; then
+            echo "Missing Cloudflare secrets. Skipping deployment."
+            echo "To enable Cloudflare deployment, add CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID to GitHub Secrets."
+            exit 0
+          fi
+      
       - name: Deploy to Cloudflare
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: deploy
+  
+  # Skip job if secrets are not configured
+  skip:
+    runs-on: ubuntu-latest
+    if: ${{ secrets.CLOUDFLARE_API_TOKEN == '' || secrets.CLOUDFLARE_ACCOUNT_ID == '' }}
+    steps:
+      - name: Skip deployment
+        run: |
+          echo "Cloudflare deployment skipped: CLOUDFLARE_API_TOKEN or CLOUDFLARE_ACCOUNT_ID not configured"
+          echo "To enable Cloudflare deployment:"
+          echo "1. Go to Settings → Secrets and variables → Actions"
+          echo "2. Add CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID secrets"
