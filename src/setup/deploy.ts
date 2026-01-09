@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import { runAsync } from './sys';
+import { runAsync, shellEscape } from './sys';
 
 const SSH_BASE_OPTS = '-o StrictHostKeyChecking=accept-new -o BatchMode=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=3';
 
@@ -96,26 +96,28 @@ async function ensureRemotePrereqs(
   stage('Ensuring prerequisites (apt, Bun, Droid)', reporter);
   // Preflight accept-new and fix host key mismatch
   const hostOnly = host.includes('@') ? host.split('@').slice(-1)[0] : host;
-  const pre = await runAsync(`ssh ${SSH_BASE_OPTS} ${host} "true"`, undefined, {signal});
+  const escapedHost = shellEscape(host);
+  const escapedHostOnly = shellEscape(hostOnly);
+  const pre = await runAsync(`ssh ${SSH_BASE_OPTS} ${escapedHost} "true"`, undefined, {signal});
   if (!pre.ok && /REMOTE HOST IDENTIFICATION HAS CHANGED!/i.test(pre.stderr || '')) {
-    await runAsync(`ssh-keygen -R ${hostOnly}`, undefined, {signal});
-    await runAsync(`ssh-keygen -R ${host}`, undefined, {signal});
+    await runAsync(`ssh-keygen -R ${escapedHostOnly}`, undefined, {signal});
+    await runAsync(`ssh-keygen -R ${escapedHost}`, undefined, {signal});
   }
   // apt basics (best-effort)
   await runAsync(
-    `ssh ${SSH_BASE_OPTS} ${host} 'bash -lc "if command -v apt-get >/dev/null 2>&1; then apt-get update -y && apt-get install -y curl git unzip sqlite3 ca-certificates >/dev/null 2>&1 || true; fi"'`,
+    `ssh ${SSH_BASE_OPTS} ${escapedHost} 'bash -lc "if command -v apt-get >/dev/null 2>&1; then apt-get update -y && apt-get install -y curl git unzip sqlite3 ca-certificates >/dev/null 2>&1 || true; fi"'`,
     undefined,
     {signal},
   );
   // Bun
   const rCheck = await runAsync(
-    `ssh ${SSH_BASE_OPTS} ${host} 'bash -lc "command -v bun >/dev/null 2>&1 || test -x \"$HOME/.bun/bin/bun\""'`,
+    `ssh ${SSH_BASE_OPTS} ${escapedHost} 'bash -lc "command -v bun >/dev/null 2>&1 || test -x \\"$HOME/.bun/bin/bun\\""'`,
     undefined,
     {signal},
   );
   if (!rCheck.ok) {
     const rInstall = await runAsync(
-      `ssh ${SSH_BASE_OPTS} ${host} 'bash -lc "curl -fsSL https://bun.sh/install | bash"'`,
+      `ssh ${SSH_BASE_OPTS} ${escapedHost} 'bash -lc "curl -fsSL https://bun.sh/install | bash"'`,
       undefined,
       {signal},
     );
@@ -123,13 +125,13 @@ async function ensureRemotePrereqs(
   }
   // Droid (required for AI summaries)
   const droidCheck = await runAsync(
-    `ssh ${SSH_BASE_OPTS} ${host} 'bash -lc "command -v droid >/dev/null 2>&1 || test -x \"$HOME/.local/bin/droid\""'`,
+    `ssh ${SSH_BASE_OPTS} ${escapedHost} 'bash -lc "command -v droid >/dev/null 2>&1 || test -x \\"$HOME/.local/bin/droid\\""'`,
     undefined,
     {signal},
   );
   if (!droidCheck.ok) {
     const droidInstall = await runAsync(
-      `ssh ${SSH_BASE_OPTS} ${host} 'bash -lc "curl -fsSL https://app.factory.ai/cli | sh"'`,
+      `ssh ${SSH_BASE_OPTS} ${escapedHost} 'bash -lc "curl -fsSL https://app.factory.ai/cli | sh"'`,
       undefined,
       {signal},
     );
@@ -141,9 +143,10 @@ async function ensureRemotePrereqs(
   try {
     await fs.access(localAuthPath);
     // Auth file exists locally, copy it to VPS
-    await runAsync(`ssh ${SSH_BASE_OPTS} ${host} 'bash -lc "mkdir -p ~/.factory"'`, undefined, {signal});
+    await runAsync(`ssh ${SSH_BASE_OPTS} ${escapedHost} 'bash -lc "mkdir -p ~/.factory"'`, undefined, {signal});
+    const escapedAuthPath = shellEscape(localAuthPath);
     const copyAuth = await runAsync(
-      `scp ${SSH_BASE_OPTS} ${localAuthPath} ${host}:~/.factory/auth.json`,
+      `scp ${SSH_BASE_OPTS} ${escapedAuthPath} ${escapedHost}:~/.factory/auth.json`,
       undefined,
       {signal},
     );
@@ -165,8 +168,10 @@ async function ensureAppDir(
   signal?: AbortSignal,
 ) {
   stage('Ensuring app directory', reporter);
+  const escapedHost = shellEscape(host);
+  const escapedDest = shellEscape(dest);
   const r = await runAsync(
-    `ssh ${SSH_BASE_OPTS} ${host} 'bash -lc "mkdir -p ${dest} && echo READY"'`,
+    `ssh ${SSH_BASE_OPTS} ${escapedHost} 'bash -lc "mkdir -p ${escapedDest} && echo READY"'`,
     undefined,
     {signal},
   );
@@ -181,16 +186,19 @@ async function ensureEnvFile(
   signal?: AbortSignal,
 ) {
   stage('Ensuring .env file', reporter);
+  const escapedHost = shellEscape(host);
+  const escapedDest = shellEscape(dest);
   const check = await runAsync(
-    `ssh ${SSH_BASE_OPTS} ${host} 'bash -lc "test -f ${dest}/.env && echo EXISTS || echo MISSING"'`,
+    `ssh ${SSH_BASE_OPTS} ${escapedHost} 'bash -lc "test -f ${escapedDest}/.env && echo EXISTS || echo MISSING"'`,
     undefined,
     {signal},
   );
   
   if (check.stdout?.trim() === 'MISSING') {
     // Generate ENCRYPTION_KEY and create .env
+    // Use environment variable to pass key securely instead of embedding in command
     const genKey = await runAsync(
-      `ssh ${SSH_BASE_OPTS} ${host} 'bash -lc "openssl rand -base64 48"'`,
+      `ssh ${SSH_BASE_OPTS} ${escapedHost} 'bash -lc "openssl rand -base64 48"'`,
       undefined,
       {signal},
     );
@@ -199,8 +207,10 @@ async function ensureEnvFile(
     const encryptionKey = genKey.stdout?.trim();
     if (!encryptionKey) { fail('Ensuring .env file', reporter, 'Generated encryption key is empty'); }
     
+    // Use heredoc to avoid embedding key in command string
+    const escapedKey = shellEscape(encryptionKey);
     const createEnv = await runAsync(
-      `ssh ${SSH_BASE_OPTS} ${host} 'bash -lc "echo \\"ENCRYPTION_KEY=${encryptionKey}\\" > ${dest}/.env"'`,
+      `ssh ${SSH_BASE_OPTS} ${escapedHost} 'bash -lc "cat > ${escapedDest}/.env <<EOF\\nENCRYPTION_KEY=${escapedKey}\\nEOF"'`,
       undefined,
       {signal},
     );
@@ -250,11 +260,15 @@ async function uploadSource(
   const create = await runAsync(createCmd, process.cwd(), {signal});
   if (!create.ok) { fail('Uploading source', reporter, create.stderr); }
   // Upload & extract
+  const escapedHost = shellEscape(host);
+  const escapedDest = shellEscape(dest);
   const remoteTar = `${dest.replace(/\/$/, '')}/${path.basename(tarPath)}`;
-  const scp = await runAsync(`scp ${SSH_BASE_OPTS} ${tarPath} ${host}:${remoteTar}`, undefined, {signal});
+  const escapedRemoteTar = shellEscape(remoteTar);
+  const escapedTarPath = shellEscape(tarPath);
+  const scp = await runAsync(`scp ${SSH_BASE_OPTS} ${escapedTarPath} ${escapedHost}:${escapedRemoteTar}`, undefined, {signal});
   if (!scp.ok) { fail('Uploading source', reporter, scp.stderr); }
   const extract = await runAsync(
-    `ssh ${SSH_BASE_OPTS} ${host} 'bash -lc "tar -xzf ${remoteTar} -C ${dest} && rm -f ${remoteTar}"'`,
+    `ssh ${SSH_BASE_OPTS} ${escapedHost} 'bash -lc "tar -xzf ${escapedRemoteTar} -C ${escapedDest} && rm -f ${escapedRemoteTar}"'`,
     undefined,
     {signal},
   );
@@ -262,7 +276,7 @@ async function uploadSource(
   if (!extract.ok) { fail('Uploading source', reporter, extract.stderr); }
   // Remove macOS metadata files that may already exist on the target
   await runAsync(
-    `ssh ${SSH_BASE_OPTS} ${host} 'bash -lc "cd ${dest} && find . -name \\"._*\\" -delete && find . -name \\".DS_Store\\" -delete"'`,
+    `ssh ${SSH_BASE_OPTS} ${escapedHost} 'bash -lc "cd ${escapedDest} && find . -name \\"._*\\" -delete && find . -name \\".DS_Store\\" -delete"'`,
     undefined,
     {signal},
   );
@@ -276,10 +290,13 @@ async function runRemoteBuild(
   reporter?: DeployReporter,
   signal?: AbortSignal,
 ) {
+  const escapedHost = shellEscape(host);
+  const escapedDest = shellEscape(dest);
+  
   // Install (dev deps too, to allow typecheck/tests)
   stage('Installing dependencies', reporter);
   const install = await runAsync(
-    `ssh ${SSH_BASE_OPTS} ${host} 'bash -lc "cd ${dest} && \"$HOME/.bun/bin/bun\" install"'`,
+    `ssh ${SSH_BASE_OPTS} ${escapedHost} 'bash -lc "cd ${escapedDest} && \\"$HOME/.bun/bin/bun\\" install"'`,
     undefined,
     {signal},
   );
@@ -289,7 +306,7 @@ async function runRemoteBuild(
   // Typecheck
   stage('Typecheck', reporter);
   const tchk = await runAsync(
-    `ssh ${SSH_BASE_OPTS} ${host} 'bash -lc "cd ${dest} && \"$HOME/.bun/bin/bun\" typecheck"'`,
+    `ssh ${SSH_BASE_OPTS} ${escapedHost} 'bash -lc "cd ${escapedDest} && \\"$HOME/.bun/bin/bun\\" typecheck"'`,
     undefined,
     {signal},
   );
@@ -306,7 +323,7 @@ async function runRemoteBuild(
 
   // Ensure tmp directory exists for tests
   await runAsync(
-    `ssh ${SSH_BASE_OPTS} ${host} 'bash -lc "cd ${dest} && mkdir -p tmp"'`,
+    `ssh ${SSH_BASE_OPTS} ${escapedHost} 'bash -lc "cd ${escapedDest} && mkdir -p tmp"'`,
     undefined,
     {signal},
   );
@@ -321,9 +338,10 @@ async function runRemoteBuild(
   let testFailureMessage: string | null = null;
   let allPassed = true;
   for (const suite of testSuites) {
+    const escapedPattern = shellEscape(suite.pattern);
     const runTests = async () =>
       runAsync(
-        `ssh ${SSH_BASE_OPTS} ${host} 'bash -lc "cd ${dest} && CI=1 BUN_TEST_CONCURRENCY=1 \\\"$HOME/.bun/bin/bun\\\" test ${suite.pattern}"'`,
+        `ssh ${SSH_BASE_OPTS} ${escapedHost} 'bash -lc "cd ${escapedDest} && CI=1 BUN_TEST_CONCURRENCY=1 \\"$HOME/.bun/bin/bun\\" test ${escapedPattern}"'`,
         undefined,
         {signal},
       );
@@ -341,7 +359,7 @@ async function runRemoteBuild(
       const summary = failLines.length > 0 ? failLines.join('\n') : testOutput.split('\n').slice(-5).join('\n');
       
       if (!force) {
-        testFailureMessage = `${suite.label} suite failed. Run tests on VPS for details:\n  ssh ${host}\n  cd ${dest}\n  bun test ${suite.pattern}\n\nFailure summary:\n${summary}`;
+        testFailureMessage = `${suite.label} suite failed. Run tests on VPS for details:\n  ssh ${escapedHost}\n  cd ${escapedDest}\n  bun test ${escapedPattern}\n\nFailure summary:\n${summary}`;
         break;
       } else {
         emit(reporter, 'fail', 'Tests', `${suite.label} suite failed (continuing)`);
@@ -360,7 +378,7 @@ async function runRemoteBuild(
   // Backup DB
   stage('Backup database', reporter);
   const backup = await runAsync(
-    `ssh ${SSH_BASE_OPTS} ${host} 'bash -lc "cd ${dest} && mkdir -p data && if [ -f data/changes.db ]; then ts=\$(date +%Y%m%d_%H%M%S); cp data/changes.db data/changes.db.backup.\$ts; ls -t data/changes.db.backup.* 2>/dev/null | tail -n +6 | xargs -r rm -f || true; fi"'`,
+    `ssh ${SSH_BASE_OPTS} ${escapedHost} 'bash -lc "cd ${escapedDest} && mkdir -p data && if [ -f data/changes.db ]; then ts=\\$(date +%Y%m%d_%H%M%S); cp data/changes.db data/changes.db.backup.\\$ts; ls -t data/changes.db.backup.* 2>/dev/null | tail -n +6 | xargs -r rm -f || true; fi"'`,
     undefined,
     {signal},
   );
@@ -370,7 +388,7 @@ async function runRemoteBuild(
   // Build
   stage('Build', reporter);
   const build = await runAsync(
-    `ssh ${SSH_BASE_OPTS} ${host} 'bash -lc "cd ${dest} && \"$HOME/.bun/bin/bun\" run build"'`,
+    `ssh ${SSH_BASE_OPTS} ${escapedHost} 'bash -lc "cd ${escapedDest} && \\"$HOME/.bun/bin/bun\\" run build"'`,
     undefined,
     {signal},
   );
@@ -380,7 +398,7 @@ async function runRemoteBuild(
   // Migrate + seed
   stage('Migrate DB', reporter);
   const mig = await runAsync(
-    `ssh ${SSH_BASE_OPTS} ${host} 'bash -lc "cd ${dest} && \"$HOME/.bun/bin/bun\" run src/db/migrate.ts"'`,
+    `ssh ${SSH_BASE_OPTS} ${escapedHost} 'bash -lc "cd ${escapedDest} && \\"$HOME/.bun/bin/bun\\" run src/db/migrate.ts"'`,
     undefined,
     {signal},
   );
@@ -389,7 +407,7 @@ async function runRemoteBuild(
 
   stage('Seed AI', reporter);
   const seed = await runAsync(
-    `ssh ${SSH_BASE_OPTS} ${host} 'bash -lc "cd ${dest} && \"$HOME/.bun/bin/bun\" run src/db/seed-ai.ts"'`,
+    `ssh ${SSH_BASE_OPTS} ${escapedHost} 'bash -lc "cd ${escapedDest} && \\"$HOME/.bun/bin/bun\\" run src/db/seed-ai.ts"'`,
     undefined,
     {signal},
   );
@@ -421,7 +439,10 @@ async function writeDeployCommit(
     emit(reporter, 'info', 'Deploy marker skipped (no git commit found)');
     return;
   }
-  const cmd = `ssh ${SSH_BASE_OPTS} ${host} 'bash -lc "echo ${commit} > ${dest}/.deploy_commit"'`;
+  const escapedHost = shellEscape(host);
+  const escapedDest = shellEscape(dest);
+  const escapedCommit = shellEscape(commit);
+  const cmd = `ssh ${SSH_BASE_OPTS} ${escapedHost} 'bash -lc "echo ${escapedCommit} > ${escapedDest}/.deploy_commit"'`;
   const res = await runAsync(cmd, undefined, {signal});
   if (!res.ok) {
     emit(reporter, 'info', 'Deploy marker skipped (could not write commit)');
@@ -435,8 +456,10 @@ async function ensureSystemd(
   signal?: AbortSignal,
 ) {
   stage('Ensuring systemd service', reporter);
+  const escapedHost = shellEscape(host);
+  const escapedDest = shellEscape(dest);
   const homeResult = await runAsync(
-    `ssh ${SSH_BASE_OPTS} ${host} 'printf %s "$HOME"'`,
+    `ssh ${SSH_BASE_OPTS} ${escapedHost} 'printf %s "$HOME"'`,
     undefined,
     {signal},
   );
@@ -444,6 +467,8 @@ async function ensureSystemd(
   const remoteHome = remoteHomeRaw || '/root';
   
   // Always generate the service file to ensure it's correct
+  // Escape dest and remoteHome for use in unit file
+  const escapedRemoteHome = shellEscape(remoteHome);
   const unit = `[Unit]
 Description=Morakeb URL monitor
 After=network.target
@@ -451,10 +476,10 @@ After=network.target
 [Service]
 Type=simple
 User=root
-WorkingDirectory=${dest}
-Environment=PATH=${remoteHome}/.local/bin:${remoteHome}/.bun/bin:/usr/local/bin:/usr/bin
-Environment=HOME=${remoteHome}
-ExecStart=${remoteHome}/.bun/bin/bun run dist/index.js
+WorkingDirectory=${escapedDest}
+Environment=PATH=${escapedRemoteHome}/.local/bin:${escapedRemoteHome}/.bun/bin:/usr/local/bin:/usr/bin
+Environment=HOME=${escapedRemoteHome}
+ExecStart=${escapedRemoteHome}/.bun/bin/bun run dist/index.js
 Restart=always
 RestartSec=5
 KillMode=mixed
@@ -471,13 +496,14 @@ WantedBy=multi-user.target
   // Upload and install/update the service file
   const tmp = `/tmp/changes.service.${Date.now()}`;
   await fs.writeFile(tmp, unit, 'utf8');
-  const up = await runAsync(`scp ${SSH_BASE_OPTS} ${tmp} ${host}:/tmp/changes.service`, undefined, {signal});
+  const escapedTmp = shellEscape(tmp);
+  const up = await runAsync(`scp ${SSH_BASE_OPTS} ${escapedTmp} ${escapedHost}:/tmp/changes.service`, undefined, {signal});
   await fs.rm(tmp, { force: true });
   if (!up.ok) { fail('Ensuring systemd service', reporter, up.stderr); }
   
   // Install/update and enable the service
   const install = await runAsync(
-    `ssh ${SSH_BASE_OPTS} ${host} 'bash -lc "mv /tmp/changes.service /etc/systemd/system/changes.service && systemctl daemon-reload && systemctl enable changes"'`,
+    `ssh ${SSH_BASE_OPTS} ${escapedHost} 'bash -lc "mv /tmp/changes.service /etc/systemd/system/changes.service && systemctl daemon-reload && systemctl enable changes"'`,
     undefined,
     {signal},
   );
@@ -491,11 +517,13 @@ async function restartAndHealth(
   reporter?: DeployReporter,
   signal?: AbortSignal,
 ) {
+  const escapedHost = shellEscape(host);
+  
   stage('Restarting service', reporter);
   
   // Use --no-block to avoid SSH connection issues during restart
   const restart = await runAsync(
-    `ssh ${SSH_BASE_OPTS} ${host} 'bash -lc "systemctl restart changes --no-block"'`,
+    `ssh ${SSH_BASE_OPTS} ${escapedHost} 'bash -lc "systemctl restart changes --no-block"'`,
     undefined,
     {signal},
   );
@@ -509,7 +537,7 @@ async function restartAndHealth(
   
   // Verify service is starting or active
   const statusCheck = await runAsync(
-    `ssh ${SSH_BASE_OPTS} ${host} 'bash -lc "systemctl is-active changes || systemctl is-activating changes || true"'`,
+    `ssh ${SSH_BASE_OPTS} ${escapedHost} 'bash -lc "systemctl is-active changes || systemctl is-activating changes || true"'`,
     undefined,
     {signal},
   );
@@ -528,7 +556,7 @@ async function restartAndHealth(
   
   // Poll health endpoint with longer timeout (60s total)
   const health = await runAsync(
-    `ssh ${SSH_BASE_OPTS} ${host} 'for i in $(seq 1 60); do curl -fsS http://127.0.0.1:3000/health >/dev/null 2>&1 && exit 0; sleep 1; done; exit 1'`,
+    `ssh ${SSH_BASE_OPTS} ${escapedHost} 'for i in $(seq 1 60); do curl -fsS http://127.0.0.1:3000/health >/dev/null 2>&1 && exit 0; sleep 1; done; exit 1'`,
     undefined,
     {signal},
   );
@@ -536,7 +564,7 @@ async function restartAndHealth(
   if (!health.ok) {
     // Gather comprehensive diagnostics on failure
     const diag = await runAsync(
-      `ssh ${SSH_BASE_OPTS} ${host} 'bash -lc "echo === SERVICE STATUS ===; systemctl status changes --no-pager; echo; echo === RECENT LOGS ===; journalctl -u changes -n 50 --no-pager"'`,
+      `ssh ${SSH_BASE_OPTS} ${escapedHost} 'bash -lc "echo === SERVICE STATUS ===; systemctl status changes --no-pager; echo; echo === RECENT LOGS ===; journalctl -u changes -n 50 --no-pager"'`,
       undefined,
       {signal},
     );

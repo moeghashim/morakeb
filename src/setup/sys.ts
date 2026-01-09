@@ -32,6 +32,16 @@ type RunAsyncOptions = {
   signal?: AbortSignal;
 };
 
+// Escape shell arguments to prevent command injection
+export function shellEscape(arg: string): string {
+  // If the argument contains only safe characters, return as-is
+  if (/^[a-zA-Z0-9_./-]+$/.test(arg)) {
+    return arg;
+  }
+  // Otherwise, wrap in single quotes and escape any single quotes within
+  return `'${arg.replace(/'/g, "'\"'\"'")}'`;
+}
+
 export function runAsync(
   cmd: string,
   cwd?: string,

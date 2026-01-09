@@ -9,6 +9,29 @@ import { useDBNavigation } from '../context';
 
 type Mode = 'menu' | 'edit-field';
 
+// Whitelist of valid table names to prevent SQL injection
+const VALID_TABLE_NAMES = new Set([
+  'monitors',
+  'snapshots',
+  'changes',
+  'notification_channels',
+  'monitor_notification_channels',
+  'channel_digest_items',
+  'notification_events',
+  'settings',
+  'ai_providers',
+  'ai_models',
+  'job_locks',
+  'job_events',
+]);
+
+function validateTableName(tableName: string | null | undefined): string | null {
+  if (!tableName || !VALID_TABLE_NAMES.has(tableName)) {
+    return null;
+  }
+  return tableName;
+}
+
 export function RowEditor() {
   const db = useDB();
   const { selectedTable, selectedRow, goBack, setFlash } = useDBNavigation();
@@ -17,10 +40,11 @@ export function RowEditor() {
   const [fieldValue, setFieldValue] = React.useState('');
   const [editedValues, setEditedValues] = React.useState<Record<string, any>>({});
 
-  if (!selectedTable || !selectedRow) return null;
+  const safeTableName = validateTableName(selectedTable);
+  if (!safeTableName || !selectedRow) return null;
 
-  // Get table info
-  const tableInfo = db.getRawDB().query(`PRAGMA table_info(${selectedTable})`).all() as any[];
+  // Get table info - use parameterized query for table name via whitelist validation
+  const tableInfo = db.getRawDB().query(`PRAGMA table_info(${safeTableName})`).all() as any[];
   const columns = tableInfo.map((col: any) => ({ name: col.name, type: col.type, pk: col.pk > 0 }));
   const primaryKeys = columns.filter(col => col.pk).map(col => col.name);
   
@@ -59,13 +83,27 @@ export function RowEditor() {
     }
 
     try {
-      const setClauses = Object.keys(editedValues).map(col => `${col} = ?`).join(', ');
-      const setValues = Object.keys(editedValues).map(col => editedValues[col]);
+      // Validate column names to prevent SQL injection
+      const validColumns = new Set(columns.map(c => c.name));
+      const safeEditedValues: Record<string, any> = {};
+      for (const [col, val] of Object.entries(editedValues)) {
+        if (validColumns.has(col)) {
+          safeEditedValues[col] = val;
+        }
+      }
+      
+      if (Object.keys(safeEditedValues).length === 0) {
+        goBack();
+        return;
+      }
+      
+      const setClauses = Object.keys(safeEditedValues).map(col => `${col} = ?`).join(', ');
+      const setValues = Object.keys(safeEditedValues).map(col => safeEditedValues[col]);
       
       const whereClauses = primaryKeys.map(pk => `${pk} = ?`).join(' AND ');
       const whereValues = primaryKeys.map(pk => selectedRow[pk]);
       
-      const sql = `UPDATE ${selectedTable} SET ${setClauses} WHERE ${whereClauses}`;
+      const sql = `UPDATE ${safeTableName} SET ${setClauses} WHERE ${whereClauses}`;
       db.getRawDB().query(sql).run(...setValues, ...whereValues);
       
       setFlash('Row updated ✓');
@@ -123,7 +161,7 @@ export function RowEditor() {
 
   return (
     <Box flexDirection="column" padding={1}>
-      <Header title={`Edit row in ${selectedTable}`} />
+      <Header title={`Edit row in ${safeTableName}`} />
       <Box marginBottom={1}>
         <Text dimColor>
           Read-only: {readOnlyFields.join(', ')}

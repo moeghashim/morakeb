@@ -24,6 +24,9 @@ migrations_dir = "drizzle"
 [triggers]
 crons = ["0 0 * * *"]
 
-[vars]
-ENCRYPTION_KEY = "your-encryption-key-here"
-TELEGRAM_WEBHOOK_SECRET = "your-webhook-secret-here"
+# Environment variables (non-secret)
+# Note: Secrets (ENCRYPTION_KEY, TELEGRAM_WEBHOOK_SECRET) should be set using:
+#   wrangler secret put ENCRYPTION_KEY
+#   wrangler secret put TELEGRAM_WEBHOOK_SECRET
+# Or via Cloudflare Dashboard → Workers → morakeb → Settings → Variables
+# Do NOT put secrets in this file!

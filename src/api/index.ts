@@ -8,15 +8,58 @@ import { notificationChannelPlugins } from '@/lib/channel';
 import { encryption } from '@/lib/encryption';
 import { TelegramConfigSchema } from '@/lib/notification/telegram';
 
+// SSRF protection: block private/internal IPs and localhost
+function isPrivateIP(hostname: string): boolean {
+  // Remove port if present
+  const host = hostname.split(':')[0];
+  
+  // Check for localhost variants
+  if (host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '[::1]') {
+    return true;
+  }
+  
+  // Check for private IP ranges
+  const parts = host.split('.');
+  if (parts.length === 4) {
+    const [a, b, c] = parts.map(Number);
+    if (isNaN(a) || isNaN(b) || isNaN(c)) return false;
+    
+    // 10.0.0.0/8
+    if (a === 10) return true;
+    // 172.16.0.0/12
+    if (a === 172 && b >= 16 && b <= 31) return true;
+    // 192.168.0.0/16
+    if (a === 192 && b === 168) return true;
+    // 127.0.0.0/8
+    if (a === 127) return true;
+    // 169.254.0.0/16 (link-local)
+    if (a === 169 && b === 254) return true;
+  }
+  
+  // Check for link-local IPv6
+  if (host.startsWith('fe80:') || host.startsWith('fc00:') || host.startsWith('fd00:')) {
+    return true;
+  }
+  
+  return false;
+}
+
 // Validation schemas
 const httpUrlSchema = z.string().url().refine((value) => {
   try {
     const u = new URL(value);
-    return u.protocol === 'http:' || u.protocol === 'https:';
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') {
+      return false;
+    }
+    // Block private/internal IPs to prevent SSRF
+    if (isPrivateIP(u.hostname)) {
+      return false;
+    }
+    return true;
   } catch {
     return false;
   }
-}, { message: 'URL must start with http:// or https://' });
+}, { message: 'URL must be a public http:// or https:// URL (private/internal IPs are not allowed)' });
 
 const createMonitorSchema = z.object({
   name: z.string().min(1).max(255),
@@ -66,9 +109,39 @@ export function createApiServer(db: DB, scheduler: Scheduler, queue: JobsQueue) 
   // Middleware
   app.use('*', logger());
   
+  // CORS for local web pages only - restrict to localhost/127.0.0.1
+  app.use('*', async (c, next) => {
+    const origin = c.req.header('Origin');
+    const isLocalhost = origin && (
+      origin.startsWith('http://localhost:') ||
+      origin.startsWith('http://127.0.0.1:') ||
+      origin.startsWith('http://[::1]:')
+    );
+    
+    if (isLocalhost) {
+      c.header('Access-Control-Allow-Origin', origin);
+    }
+    c.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    c.header('Access-Control-Allow-Headers', 'Content-Type');
+    if (c.req.method === 'OPTIONS') {
+      return new Response(null, { status: 204 });
+    }
+    await next();
+  });
+  
   // Health check
   app.get('/health', (c) => {
     return c.json({ status: 'ok', timestamp: new Date().toISOString() });
+  });
+
+  // Serve add monitor page
+  app.get('/', async (c) => {
+    try {
+      const html = await Bun.file('./add-monitor.html').text();
+      return c.html(html);
+    } catch {
+      return c.text('Add monitor page not found. Make sure add-monitor.html exists in the project root.', 404);
+    }
   });
 
   // Telegram webhook: delete join/leave service messages quickly

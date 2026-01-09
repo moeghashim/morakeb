@@ -75,10 +75,17 @@ bun scripts/deploy-agent.ts --daemon
    # ... repeat for all migration files
    ```
 
-5. **Set Environment Variables:**
+5. **Set Worker Secrets (REQUIRED):**
+   ```bash
+   wrangler secret put ENCRYPTION_KEY
+   wrangler secret put TELEGRAM_WEBHOOK_SECRET
+   ```
+   Or set via Cloudflare Dashboard → Workers → morakeb → Settings → Variables
+
+6. **Set Environment Variables (for local deployment):**
    Add to your `.env` file (see below)
 
-6. **Set GitHub Secrets (for CI/CD):**
+7. **Set GitHub Secrets (for CI/CD):**
    - `CLOUDFLARE_API_TOKEN`
    - `CLOUDFLARE_ACCOUNT_ID`
 
@@ -122,6 +129,7 @@ curl "http://localhost:8787/__scheduled?cron=0+0+*+*+*"
 - Verify prerequisites: `git --version`, `wrangler --version`
 - Check environment variables: `echo $CLOUDFLARE_API_TOKEN`
 - Test Cloudflare connection: `wrangler whoami`
+- Verify Worker secrets are set: `wrangler secret list` (should show ENCRYPTION_KEY and TELEGRAM_WEBHOOK_SECRET)
 
 ## Where to Add Cloudflare API Keys
 

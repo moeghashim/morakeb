@@ -8,19 +8,43 @@ import { useDBNavigation } from '../context';
 
 const PAGE_SIZE = 10;
 
+// Whitelist of valid table names to prevent SQL injection
+const VALID_TABLE_NAMES = new Set([
+  'monitors',
+  'snapshots',
+  'changes',
+  'notification_channels',
+  'monitor_notification_channels',
+  'channel_digest_items',
+  'notification_events',
+  'settings',
+  'ai_providers',
+  'ai_models',
+  'job_locks',
+  'job_events',
+]);
+
+function validateTableName(tableName: string | null | undefined): string | null {
+  if (!tableName || !VALID_TABLE_NAMES.has(tableName)) {
+    return null;
+  }
+  return tableName;
+}
+
 export function TableViewer() {
   const db = useDB();
   const { selectedTable, navigateTo, setSelectedRow, currentPage, setCurrentPage, flash, setFlash } = useDBNavigation();
 
-  if (!selectedTable) return null;
+  const safeTableName = validateTableName(selectedTable);
+  if (!safeTableName) return null;
 
-  // Get table info
-  const tableInfo = db.getRawDB().query(`PRAGMA table_info(${selectedTable})`).all() as any[];
+  // Get table info - use parameterized query for table name via whitelist validation
+  const tableInfo = db.getRawDB().query(`PRAGMA table_info(${safeTableName})`).all() as any[];
   const columns = tableInfo.map((col: any) => col.name);
   const primaryKeys = tableInfo.filter((col: any) => col.pk > 0).map((col: any) => col.name);
 
   // Get total count
-  const countResult = db.getRawDB().query(`SELECT COUNT(*) as count FROM ${selectedTable}`).get() as any;
+  const countResult = db.getRawDB().query(`SELECT COUNT(*) as count FROM ${safeTableName}`).get() as any;
   const totalRows = countResult?.count || 0;
   const totalPages = Math.ceil(totalRows / PAGE_SIZE);
 
@@ -28,17 +52,17 @@ export function TableViewer() {
   const offset = currentPage * PAGE_SIZE;
   let rows: any[];
   
-  if (selectedTable === 'changes' || selectedTable === 'snapshots') {
+  if (safeTableName === 'changes' || safeTableName === 'snapshots') {
     // Join with monitors to show monitor name
     rows = db.getRawDB().query(
-      `SELECT ${selectedTable}.*, monitors.name as monitor_name 
-       FROM ${selectedTable} 
-       LEFT JOIN monitors ON ${selectedTable}.monitor_id = monitors.id 
-       ORDER BY ${selectedTable}.created_at DESC 
+      `SELECT ${safeTableName}.*, monitors.name as monitor_name 
+       FROM ${safeTableName} 
+       LEFT JOIN monitors ON ${safeTableName}.monitor_id = monitors.id 
+       ORDER BY ${safeTableName}.created_at DESC 
        LIMIT ? OFFSET ?`
     ).all(PAGE_SIZE, offset) as any[];
   } else {
-    rows = db.getRawDB().query(`SELECT * FROM ${selectedTable} LIMIT ? OFFSET ?`).all(PAGE_SIZE, offset) as any[];
+    rows = db.getRawDB().query(`SELECT * FROM ${safeTableName} LIMIT ? OFFSET ?`).all(PAGE_SIZE, offset) as any[];
   }
 
   // Select important columns to display (not all)
@@ -83,10 +107,10 @@ export function TableViewer() {
 
   // Build meaningful row labels based on table type
   const getRowLabel = (row: any): string => {
-    if (selectedTable === 'changes') {
+    if (safeTableName === 'changes') {
       const summary = row.ai_summary || row.summary || 'no summary';
       return `Change for ${row.monitor_name || 'unknown'} · ${truncateSingleLine(summary, 40)}`;
-    } else if (selectedTable === 'snapshots') {
+    } else if (safeTableName === 'snapshots') {
       return `Snapshot for ${row.monitor_name || 'unknown'} · ${row.created_at || ''}`;
     }
     // Default: show first non-id column
@@ -103,7 +127,7 @@ export function TableViewer() {
 
   return (
     <Box flexDirection="column" padding={1}>
-      <Header title={`Table: ${selectedTable}`} />
+      <Header title={`Table: ${safeTableName}`} />
       <Box marginBottom={1}>
         <Text dimColor>
           {totalRows} rows · page {currentPage + 1}/{totalPages || 1}

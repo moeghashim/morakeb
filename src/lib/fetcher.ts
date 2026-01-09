@@ -19,12 +19,57 @@ export class Fetcher {
 
   private rateLimits = new Map<string, number[]>();
 
+  private isPrivateIP(hostname: string): boolean {
+    // Remove port if present
+    const host = hostname.split(':')[0];
+    
+    // Check for localhost variants
+    if (host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '[::1]') {
+      return true;
+    }
+    
+    // Check for private IP ranges
+    const parts = host.split('.');
+    if (parts.length === 4) {
+      const [a, b, c] = parts.map(Number);
+      if (isNaN(a) || isNaN(b) || isNaN(c)) return false;
+      
+      // 10.0.0.0/8
+      if (a === 10) return true;
+      // 172.16.0.0/12
+      if (a === 172 && b >= 16 && b <= 31) return true;
+      // 192.168.0.0/16
+      if (a === 192 && b === 168) return true;
+      // 127.0.0.0/8
+      if (a === 127) return true;
+      // 169.254.0.0/16 (link-local)
+      if (a === 169 && b === 254) return true;
+    }
+    
+    // Check for link-local IPv6
+    if (host.startsWith('fe80:') || host.startsWith('fc00:') || host.startsWith('fd00:')) {
+      return true;
+    }
+    
+    return false;
+  }
+
   async check(monitor: Monitor): Promise<CheckResult> {
     const headers = this.buildHeaders();
 
     try {
+      const url = new URL(monitor.url);
+      
+      // SSRF protection: block private/internal IPs
+      if (this.isPrivateIP(url.hostname)) {
+        return {
+          success: false,
+          error: 'Private/internal IP addresses are not allowed for security reasons',
+        };
+      }
+      
       // Check rate limiting
-      await this.checkRateLimit(new URL(monitor.url).hostname);
+      await this.checkRateLimit(url.hostname);
 
       // Fetch with retry logic
       const response = await this.fetchWithRetry(monitor.url, { headers }, 2);

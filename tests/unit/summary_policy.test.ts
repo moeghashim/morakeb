@@ -13,7 +13,7 @@ describe('summary-format notification policy', () => {
     };
     const result = enforceNotificationPolicy(input);
     expect(result.shouldNotify).toBe(false);
-    expect(result.skipReason).toContain('bug fix');
+    expect(result.skipReason).toContain('إصلاحان فقط');
   });
 
   it('keeps notifications when features exist', () => {
