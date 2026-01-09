@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Add Monitor - Morakeb</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background: #1a1a1a;
+      color: #e0e0e0;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      padding: 20px;
+    }
+
+    .container {
+      background: #2a2a2a;
+      border-radius: 8px;
+      padding: 32px;
+      max-width: 600px;
+      width: 100%;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    }
+
+    h1 {
+      color: #fff;
+      margin-bottom: 8px;
+      font-size: 24px;
+      font-weight: 600;
+    }
+
+    .step-indicator {
+      color: #888;
+      font-size: 14px;
+      margin-bottom: 24px;
+    }
+
+    .form-group {
+      margin-bottom: 24px;
+    }
+
+    label {
+      display: block;
+      color: #e0e0e0;
+      margin-bottom: 8px;
+      font-size: 14px;
+      font-weight: 500;
+    }
+
+    .hint {
+      color: #888;
+      font-size: 12px;
+      margin-bottom: 8px;
+      margin-top: -4px;
+    }
+
+    input, select {
+      width: 100%;
+      padding: 10px 12px;
+      background: #1a1a1a;
+      border: 1px solid #444;
+      border-radius: 4px;
+      color: #e0e0e0;
+      font-size: 14px;
+      font-family: inherit;
+    }
+
+    input:focus, select:focus {
+      outline: none;
+      border-color: #4a9eff;
+      box-shadow: 0 0 0 3px rgba(74, 158, 255, 0.1);
+    }
+
+    input::placeholder {
+      color: #666;
+    }
+
+    .error {
+      color: #ff6b6b;
+      font-size: 12px;
+      margin-top: 6px;
+      display: none;
+    }
+
+    .error.show {
+      display: block;
+    }
+
+    .success {
+      color: #51cf66;
+      font-size: 14px;
+      margin-top: 16px;
+      padding: 12px;
+      background: rgba(81, 207, 102, 0.1);
+      border-radius: 4px;
+      display: none;
+    }
+
+    .success.show {
+      display: block;
+    }
+
+    .button-group {
+      display: flex;
+      gap: 12px;
+      margin-top: 32px;
+    }
+
+    button {
+      padding: 10px 20px;
+      border: none;
+      border-radius: 4px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+      font-family: inherit;
+    }
+
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .btn-primary {
+      background: #4a9eff;
+      color: #fff;
+      flex: 1;
+    }
+
+    .btn-primary:hover:not(:disabled) {
+      background: #3a8eef;
+    }
+
+    .btn-secondary {
+      background: #444;
+      color: #e0e0e0;
+    }
+
+    .btn-secondary:hover:not(:disabled) {
+      background: #555;
+    }
+
+    .step {
+      display: none;
+    }
+
+    .step.active {
+      display: block;
+    }
+
+    .monitor-info {
+      background: #1a1a1a;
+      padding: 16px;
+      border-radius: 4px;
+      margin-top: 16px;
+      border-left: 3px solid #4a9eff;
+    }
+
+    .monitor-info h3 {
+      color: #fff;
+      margin-bottom: 8px;
+      font-size: 16px;
+    }
+
+    .monitor-info p {
+      color: #aaa;
+      font-size: 13px;
+      margin: 4px 0;
+    }
+
+    .loading {
+      display: inline-block;
+      width: 14px;
+      height: 14px;
+      border: 2px solid #444;
+      border-top-color: #4a9eff;
+      border-radius: 50%;
+      animation: spin 0.6s linear infinite;
+      margin-left: 8px;
+      vertical-align: middle;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Add Monitor</h1>
+    <div class="step-indicator" id="stepIndicator">Step 1 of 4</div>
+
+    <form id="monitorForm">
+      <!-- Step 1: Name -->
+      <div class="step active" data-step="0">
+        <div class="form-group">
+          <label for="name">Enter monitor name:</label>
+          <div class="hint">e.g., "My blog", "GitHub API", etc.</div>
+          <input type="text" id="name" name="name" placeholder="My blog" required autofocus>
+          <div class="error" id="nameError"></div>
+        </div>
+      </div>
+
+      <!-- Step 2: URL -->
+      <div class="step" data-step="1">
+        <div class="form-group">
+          <label for="url">Enter URL to monitor:</label>
+          <div class="hint">e.g., https://example.com</div>
+          <input type="url" id="url" name="url" placeholder="https://example.com" required>
+          <div class="error" id="urlError"></div>
+        </div>
+      </div>
+
+      <!-- Step 3: Type -->
+      <div class="step" data-step="2">
+        <div class="form-group">
+          <label for="type">Enter type:</label>
+          <div class="hint">webpage = HTML pages, api = JSON endpoints, markdown = Markdown files, xml = XML feeds/documents</div>
+          <select id="type" name="type" required>
+            <option value="webpage">webpage</option>
+            <option value="api">api</option>
+            <option value="markdown">markdown</option>
+            <option value="xml">xml</option>
+          </select>
+          <div class="error" id="typeError"></div>
+        </div>
+      </div>
+
+      <!-- Step 4: Interval -->
+      <div class="step" data-step="3">
+        <div class="form-group">
+          <label for="intervalMinutes">Enter check interval in minutes:</label>
+          <div class="hint">e.g., 5, 60, 120 (default: 60)</div>
+          <input type="number" id="intervalMinutes" name="intervalMinutes" placeholder="60" min="1" value="60" required>
+          <div class="error" id="intervalError"></div>
+        </div>
+      </div>
+
+      <!-- Success message -->
+      <div class="success" id="successMessage"></div>
+
+      <!-- Buttons -->
+      <div class="button-group">
+        <button type="button" class="btn-secondary" id="backBtn" style="display: none;">Back</button>
+        <button type="submit" class="btn-primary" id="submitBtn">Next</button>
+      </div>
+    </form>
+  </div>
+
+  <script>
+    const API_BASE = 'http://127.0.0.1:3000';
+    let currentStep = 0;
+    const totalSteps = 4;
+    const formData = {
+      name: '',
+      url: '',
+      type: 'webpage',
+      intervalMinutes: 60
+    };
+
+    const steps = document.querySelectorAll('.step');
+    const stepIndicator = document.getElementById('stepIndicator');
+    const backBtn = document.getElementById('backBtn');
+    const submitBtn = document.getElementById('submitBtn');
+    const form = document.getElementById('monitorForm');
+    const successMessage = document.getElementById('successMessage');
+
+    function updateStepIndicator() {
+      stepIndicator.textContent = `Step ${currentStep + 1} of ${totalSteps}`;
+    }
+
+    function showStep(step) {
+      steps.forEach((s, i) => {
+        s.classList.toggle('active', i === step);
+      });
+      backBtn.style.display = step > 0 ? 'block' : 'none';
+      submitBtn.textContent = step === totalSteps - 1 ? 'Create Monitor' : 'Next';
+      updateStepIndicator();
+
+      // Focus the input in the active step
+      const activeInput = steps[step].querySelector('input, select');
+      if (activeInput) {
+        setTimeout(() => activeInput.focus(), 100);
+      }
+    }
+
+    function validateStep(step) {
+      const stepEl = steps[step];
+      const input = stepEl.querySelector('input, select');
+      const errorEl = stepEl.querySelector('.error');
+      
+      if (!input) return true;
+
+      const value = input.value.trim();
+
+      // Clear previous error
+      errorEl.classList.remove('show');
+      errorEl.textContent = '';
+
+      // Step-specific validation
+      if (step === 0) {
+        if (!value) {
+          errorEl.textContent = 'Name is required';
+          errorEl.classList.add('show');
+          return false;
+        }
+        if (value.length > 255) {
+          errorEl.textContent = 'Name must be 255 characters or less';
+          errorEl.classList.add('show');
+          return false;
+        }
+        formData.name = value;
+      } else if (step === 1) {
+        if (!value) {
+          errorEl.textContent = 'URL is required';
+          errorEl.classList.add('show');
+          return false;
+        }
+        try {
+          const url = new URL(value);
+          if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+            throw new Error('Invalid protocol');
+          }
+          formData.url = value;
+        } catch {
+          errorEl.textContent = 'Invalid URL. Use http:// or https://';
+          errorEl.classList.add('show');
+          return false;
+        }
+      } else if (step === 2) {
+        const validTypes = ['webpage', 'api', 'markdown', 'xml'];
+        if (!validTypes.includes(value.toLowerCase())) {
+          errorEl.textContent = 'Invalid type. Use one of: webpage, api, markdown, xml';
+          errorEl.classList.add('show');
+          return false;
+        }
+        formData.type = value.toLowerCase();
+      } else if (step === 3) {
+        const interval = parseInt(value);
+        if (!value || isNaN(interval) || interval < 1) {
+          errorEl.textContent = 'Interval must be a positive number';
+          errorEl.classList.add('show');
+          return false;
+        }
+        formData.intervalMinutes = interval;
+      }
+
+      return true;
+    }
+
+    async function submitForm() {
+      submitBtn.disabled = true;
+      submitBtn.innerHTML = 'Creating...<span class="loading"></span>';
+
+      try {
+        const response = await fetch(`${API_BASE}/api/monitors`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            ...formData,
+            active: true
+          })
+        });
+
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.error || 'Failed to create monitor');
+        }
+
+        const result = await response.json();
+        const monitor = result.monitor;
+
+        // Show success message
+        successMessage.innerHTML = `
+          <h3>✓ Monitor created successfully!</h3>
+          <div class="monitor-info">
+            <h3>${monitor.name}</h3>
+            <p><strong>URL:</strong> ${monitor.url}</p>
+            <p><strong>Type:</strong> ${monitor.type}</p>
+            <p><strong>Interval:</strong> ${monitor.intervalMinutes} minutes</p>
+            <p><strong>Status:</strong> ${monitor.active ? 'Active' : 'Inactive'}</p>
+          </div>
+          <p style="margin-top: 12px;">You can now add this monitor to notification channels in the TUI.</p>
+        `;
+        successMessage.classList.add('show');
+
+        // Hide form
+        form.style.display = 'none';
+        stepIndicator.style.display = 'none';
+
+        // Reset button
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Create Another Monitor';
+        submitBtn.onclick = () => {
+          location.reload();
+        };
+
+      } catch (error) {
+        const errorEl = steps[currentStep].querySelector('.error');
+        errorEl.textContent = error.message || 'Failed to create monitor. Make sure the API server is running at http://127.0.0.1:3000';
+        errorEl.classList.add('show');
+        submitBtn.disabled = false;
+        submitBtn.textContent = currentStep === totalSteps - 1 ? 'Create Monitor' : 'Next';
+      }
+    }
+
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      
+      if (!validateStep(currentStep)) {
+        return;
+      }
+
+      if (currentStep < totalSteps - 1) {
+        currentStep++;
+        showStep(currentStep);
+      } else {
+        submitForm();
+      }
+    });
+
+    backBtn.addEventListener('click', () => {
+      if (currentStep > 0) {
+        currentStep--;
+        showStep(currentStep);
+      }
+    });
+
+    // Allow Enter key to submit
+    form.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && e.target.tagName !== 'BUTTON') {
+        e.preventDefault();
+        form.dispatchEvent(new Event('submit'));
+      }
+    });
+
+    // Initialize
+    showStep(0);
+  </script>
+</body>
+</html>
